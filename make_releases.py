@@ -60,14 +60,15 @@ class UnrealIni:
                     if k == target_key:
                         done_update = True
                         values[i] = [k, modifier(enabled, v)]
-        print(self.reconstruct())
+        #print(self.reconstruct())
 
 
 @dataclass
 class BuildFlavour:
     flavour_name: str
     plugin_name: str
-    engine_keys: tuple[str,dict] | None = None
+    engine_keys: tuple[str, dict] | None = None
+    game_keys: tuple[str, dict] | None = None
     engine_version_override: str | None = None
     dont_build: bool = False
 
@@ -85,7 +86,14 @@ class BuildFlavour:
     def update_defaultengine(self, config_ini: UnrealIni, enabled: bool):
         if self.engine_keys != None:
             for val, modifier in self.engine_keys:
-                print(val, modifier)
+                #print(val, modifier)
+                config_ini.update_value(enabled, val, modifier)
+        return config_ini.reconstruct()
+
+    def update_defaultgame(self, config_ini: UnrealIni, enabled: bool):
+        if self.game_keys != None:
+            for val, modifier in self.game_keys:
+                #print(val, modifier)
                 config_ini.update_value(enabled, val, modifier)
         return config_ini.reconstruct()
 
@@ -127,6 +135,13 @@ BUILD_FLAVOURS = [
                 ),
                 lambda enabled, current: r"32" if enabled else current,
             ),
+            (
+                (
+                    "DirectCamera",
+                    "bAddMetaPassthroughPermissions",
+                ),
+                lambda enabled, current: (str(enabled)),
+            ),
         ],
     ),
     BuildFlavour(
@@ -135,8 +150,28 @@ BUILD_FLAVOURS = [
         [
             (
                 (
-                    "/Script/Engine.RendererSettings", 
+                    "/Script/Engine.RendererSettings",
                     "vr.MobileMultiView",
+                ),
+                lambda enabled, current: "False" if enabled else "True",
+            ),
+            (
+                (
+                    "/Script/EngineSettings.GameMapsSettings",
+                    "GameDefaultMap",
+                ),
+                lambda enabled, current: (
+                    "/Game/Camera/Camera.Camera"
+                    if enabled
+                    else "/Game/Quest/QuestEyes.QuestEyes"
+                ),
+            ),
+        ],
+        game_keys=[
+            (
+                (
+                    "/Script/EngineSettings.GeneralProjectSettings",
+                    "bStartInVR",
                 ),
                 lambda enabled, current: "False" if enabled else "True",
             ),
@@ -176,7 +211,9 @@ BUILD_FLAVOURS = [
             ),
         ],
     ),
-    BuildFlavour("vivefocus", "ViveOpenXR", engine_version_override="5.3",dont_build=True),
+    BuildFlavour(
+        "vivefocus", "ViveOpenXR", engine_version_override="5.3", dont_build=True
+    ),
     BuildFlavour("old_pico", "PicoXR", dont_build=True),
 ]
 
@@ -247,15 +284,15 @@ parser_release.add_argument(
     "--force", "-f", help="Update existing release if tag exists", action="store_true"
 )
 
-parser_run = subparsers.add_parser(
-    "run", help="Run the project on device"
-)
+parser_run = subparsers.add_parser("run", help="Run the project on device")
 parser_run.add_argument(
     "device",
     help="A device to run on.",
     choices=[x.flavour_name for x in BUILD_FLAVOURS],
 )
-parser_run.add_argument("--development", "-d", help="Run development build", action="store_true")
+parser_run.add_argument(
+    "--development", "-d", help="Run development build", action="store_true"
+)
 parser_run.add_argument(
     "--grablog",
     "-g",
@@ -267,7 +304,7 @@ parser_run.add_argument("--logname", "-l", help="Set log text file name")
 
 args = parser.parse_args()
 
-if getattr(args,"logname",None) is not None:
+if getattr(args, "logname", None) is not None:
     args.grablog = True
 
 project_folder = Path(__file__).parent
@@ -277,6 +314,7 @@ project_short_name = project_folder.name
 
 project_file = list(project_folder.glob("*.uproject"))[0]
 defaultengine_file = project_folder / "Config/DefaultEngine.ini"
+defaultgame_file = project_folder / "Config/DefaultGame.ini"
 if (args.command != "release") and getattr(args, "development", False):
     release_folder = Path(__file__).parent / "DevReleases"
 else:
@@ -337,9 +375,11 @@ def command_build(args):
     orig_project_file = project_file.read_text()
     uproject_data = json.loads(orig_project_file)
     orig_defaultengine_file = defaultengine_file.read_text()
+    orig_defaultgame_file = defaultgame_file.read_text()
 
     try:
         defaultengine_data = UnrealIni(orig_defaultengine_file)
+        defaultgame_data = UnrealIni(orig_defaultgame_file)
 
         release_folder.mkdir(exist_ok=True)
 
@@ -353,6 +393,7 @@ def command_build(args):
                     )
                     sys.exit(-1)
                 all_flavour.update_defaultengine(defaultengine_data, enabled)
+                all_flavour.update_defaultgame(defaultgame_data, enabled)
             if current_flavour.engine_version_override is None:
                 engine_path = Path(args.ue_path) / f"UE_{args.engine_version}"
             else:
@@ -381,6 +422,7 @@ def command_build(args):
 
             project_file.write_text(json.dumps(uproject_data, indent=4))
             defaultengine_file.write_text(defaultengine_data.reconstruct())
+            defaultgame_file.write_text(defaultgame_data.reconstruct())
 
             platform_folder = release_folder / current_flavour.flavour_name
             if args.skipbuild:
@@ -405,19 +447,24 @@ def command_build(args):
                     config = "Shipping"
 
                 cmdline = [
+                    f"{str(engine_path)}\\Engine\\Build\\BatchFiles\\Build.bat",
+                    "DirectCameraExamples",
+                    "Android",
+                    "Development",
+                    f"{str(project_file)}",
+                    "-waitmutex",
+                ]
+                cmdline2 = [
                     f"{str(engine_path)}\\Engine\\Build\\BatchFiles\\RunUAT.bat",
                     "buildcookrun",
                     f"-project={str(project_file)}",
-                    "-platform=android",
-                    "-build",
-                    "-stage",
-                    "-skipbuildeditor",
-                    "-nocompileeditor",
-                    "-package",
-                    "-pak",
-                    "-cook",
-                    "-NoMutex",
-                    "-compressed",
+                    "-noP4",
+                    "-NoCompileEditor",
+                    "-Platform=Android",
+                    "-TargetPlatform=Android",
+                    "-IterativeCooking",
+                    "-Cook",
+                    "-cookflavor=ASTC",
                     f"-configuration={config}",
                     "-archive",
                     f"-archivedirectory={platform_folder}",
@@ -495,6 +542,7 @@ def command_build(args):
     finally:
         project_file.write_text(orig_project_file)
         defaultengine_file.write_text(orig_defaultengine_file)
+        defaultgame_file.write_text(orig_defaultgame_file)
 
 
 def command_release(args):
@@ -524,6 +572,7 @@ def command_release(args):
         + [str(x) for x in uploading_zips]
     )
 
+
 def command_run(args):
     device = args.device
     if args.development:
@@ -535,16 +584,14 @@ def command_run(args):
     for f in BUILD_FLAVOURS:
         if f.flavour_name == args.device:
             current_flavour = f
-    
+
     if current_flavour is None:
         print(f"Unknown device {args.device}")
         sys.exit(-1)
 
     while True:
         print("Checking for connected Android devices...")
-        result = subprocess.run(
-            ["adb", "devices"], capture_output=True, text=True
-        )
+        result = subprocess.run(["adb", "devices"], capture_output=True, text=True)
         lines = result.stdout.strip().splitlines()
         if len(lines) < 2 or not any(line.strip() for line in lines[1:]):
             print(
@@ -555,12 +602,10 @@ def command_run(args):
             print("Found connected Android device")
             break
     # find the install batch file
-    platform_folder = release_folder / current_flavour.flavour_name    
+    platform_folder = release_folder / current_flavour.flavour_name
     for b in platform_folder.glob("*.bat"):
         if b.name.lower().startswith("install"):
-            subprocess.check_call(
-                [str(b)], shell=True, cwd=str(platform_folder)
-            )
+            subprocess.check_call([str(b)], shell=True, cwd=str(platform_folder))
             break
 
     if args.grablog:
@@ -586,16 +631,13 @@ def command_run(args):
             log_name = args.logname
         else:
             now = datetime.now()
-            log_name = now.strftime(
-                f"{project_short_name}-%Y_%m_%d-%H_%M_%S.txt"
-            )
+            log_name = now.strftime(f"{project_short_name}-%Y_%m_%d-%H_%M_%S.txt")
         print(f"Grabbing log to {log_name}. Press ctrl+c to exit")
         subprocess.check_call(
             ["adb", "logcat", ">", str(log_name)],
             shell=True,
             cwd=str(project_folder),
         )
-
 
 
 locals()["command_" + args.command](args)
