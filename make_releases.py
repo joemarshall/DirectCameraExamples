@@ -12,6 +12,9 @@ import os
 
 from dataclasses import dataclass
 
+NDK_VERSIONS = [((0,0),(5,5),"25.1.8937393")
+                ,((5,6),(9,9),"27.2.12479018")]
+
 
 class UnrealIni:
     def __init__(self, content: str):
@@ -60,7 +63,7 @@ class UnrealIni:
                     if k == target_key:
                         done_update = True
                         values[i] = [k, modifier(enabled, v)]
-        #print(self.reconstruct())
+        # print(self.reconstruct())
 
 
 @dataclass
@@ -86,14 +89,14 @@ class BuildFlavour:
     def update_defaultengine(self, config_ini: UnrealIni, enabled: bool):
         if self.engine_keys != None:
             for val, modifier in self.engine_keys:
-                #print(val, modifier)
+                # print(val, modifier)
                 config_ini.update_value(enabled, val, modifier)
         return config_ini.reconstruct()
 
     def update_defaultgame(self, config_ini: UnrealIni, enabled: bool):
         if self.game_keys != None:
             for val, modifier in self.game_keys:
-                #print(val, modifier)
+                # print(val, modifier)
                 config_ini.update_value(enabled, val, modifier)
         return config_ini.reconstruct()
 
@@ -165,6 +168,13 @@ BUILD_FLAVOURS = [
                     if enabled
                     else "/Game/Quest/QuestEyes.QuestEyes"
                 ),
+            ),
+            (
+                (
+                    "DirectCamera",
+                    "bAddCameraPermissions",
+                ),
+                lambda enabled, current: (str(enabled)),
             ),
         ],
         game_keys=[
@@ -269,6 +279,9 @@ parser_build.add_argument(
 )
 parser_build.add_argument(
     "--skipbuild", "-sb", help="Skip the build step", action="store_true"
+)
+parser_build.add_argument(
+    "--clean", "-c", help="Clean existing build artifacts", action="store_true"
 )
 validation_group = parser_build.add_mutually_exclusive_group()
 validation_group.add_argument(
@@ -394,12 +407,8 @@ def command_build(args):
                     sys.exit(-1)
                 all_flavour.update_defaultengine(defaultengine_data, enabled)
                 all_flavour.update_defaultgame(defaultgame_data, enabled)
-            if current_flavour.engine_version_override is None:
-                engine_path = Path(args.ue_path) / f"UE_{args.engine_version}"
-            else:
-                engine_path = (
-                    Path(args.ue_path) / f"UE_{current_flavour.engine_version_override}"
-                )
+
+
 
             # set derived data cache path to be different for each build flavour
             # because e.g. quest, pico, and android versions of cached assets are incompatible
@@ -407,6 +416,27 @@ def command_build(args):
             engine_version = (
                 current_flavour.engine_version_override or args.engine_version
             )
+
+            engine_path = Path(args.ue_path) / f"UE_{engine_version}"
+
+            if not engine_path.exists():
+                print(f"Engine path {engine_path} does not exist")
+                sys.exit(-1)
+
+            version_int = tuple(map(int, engine_version.split(".")))
+            ndk_version = "25.2.9519653"  # default to ndk version 25.2
+            for x in NDK_VERSIONS:
+                if version_int >= x[0] and version_int<= x[1]:
+                    ndk_version = x[2]
+                    break
+
+            ndkroot = Path(os.environ.get("NDK_ROOT", "c:\\Android\\ndk"))
+            if ndkroot.stem != "ndk":
+                ndkroot = ndkroot.parent
+            print("Using NDK root",ndkroot / ndk_version)
+            os.environ["NDK_ROOT"] = str(ndkroot/ndk_version)
+            os.environ["NDKROOT"] = str(ndkroot/ndk_version)
+
             os.environ["UE-LocalDataCachePath"] = str(
                 project_folder
                 / "DerivedDataCache"
@@ -446,98 +476,129 @@ def command_build(args):
                 else:
                     config = "Shipping"
 
-                cmdline = [
-                    f"{str(engine_path)}\\Engine\\Build\\BatchFiles\\Build.bat",
-                    "DirectCameraExamples",
-                    "Android",
-                    "Development",
-                    f"{str(project_file)}",
-                    "-waitmutex",
-                ]
-                cmdline2 = [
+                # if args.sanitizer:
+                #     cmdline_build.append(
+                #         {
+                #             "asan": "-EnableASan",
+                #             "ubsan": "-EnableUBSan",
+                #             "tsan": "-EnableTSan",
+                #         }[args.sanitizer]
+                #     )
+
+                cmdline_build = [
+                    f"cmd.exe",
+                    "/c",
                     f"{str(engine_path)}\\Engine\\Build\\BatchFiles\\RunUAT.bat",
-                    "buildcookrun",
-                    f"-project={str(project_file)}",
-                    "-noP4",
-                    "-NoCompileEditor",
-                    "-Platform=Android",
-                    "-TargetPlatform=Android",
-                    "-IterativeCooking",
-                    "-Cook",
+                    f'-ScriptsForProject="{str(project_file)}"',
+                    "Turnkey",
+                    "-command=VerifySdk",
+                    "-platform=Android",
+                    "-UpdateIfNeeded",
+                    f'-project="{str(project_file)}"',
+                    "BuildCookRun",
+                    "-nop4",
+                    "-utf8output",
+                    "-nocompileeditor",
+                    "-skipbuildeditor",
+                    "-cook",
+                    f'-project="{str(project_file)}"',
+                    f'-unrealexe=UnrealEditor-Cmd.exe',
+                    "-platform=Android",
                     "-cookflavor=ASTC",
-                    f"-configuration={config}",
+                    "-installed",
+                    "-stage",
                     "-archive",
-                    f"-archivedirectory={platform_folder}",
+                    "-package",
+                    "-build",
+                    "-pak",
+                    "-iostore",
+                    "-compressed",
+                    "-prereqs",
+                    f'-archivedirectory="{str(platform_folder)}"',
+                    f"-clientconfig={config}",
+                    "-nocompile",
+                    "-nocompileuat",
                 ]
-                if args.sanitizer:
-                    cmdline.append(
-                        {
-                            "asan": "-EnableASan",
-                            "ubsan": "-EnableUBSan",
-                            "tsan": "-EnableTSan",
-                        }[args.sanitizer]
-                    )
-                subprocess.check_call(cmdline, shell=True)
+                if args.clean:
+                    cmdline_build.append("-clean")
+                else:
+                    # iterative cook unless we're doing it from clean
+                    cmdline_build.append("-iterative")
+                try:
+                    subprocess.check_call(cmdline_build, shell=False)
+                except subprocess.CalledProcessError as e:
+                    print(f"Error during build: {e}")
+                    print(" ".join(cmdline_build))
+                    sys.exit(-1)
+
             # if the build is to a subfolder of the target folder (e.g. Android / Android_ASTC etc.) then move that up one
             if (platform_folder / "Android").exists():
                 for x in (platform_folder / "Android").iterdir():
                     shutil.move(x, platform_folder)
 
-            if args.install or args.run or args.grablog:
-                # Check for connected devices before install/run
-                while True:
-                    print("Checking for connected Android devices...")
-                    result = subprocess.run(
-                        ["adb", "devices"], capture_output=True, text=True
+            if (platform_folder / "Android_ASTC").exists():
+                for x in (platform_folder / "Android_ASTC").iterdir():
+                    shutil.move(x, platform_folder)
+
+        if args.install or args.run or args.grablog:
+            # Check for connected devices before install/run
+            while True:
+                print("Checking for connected Android devices...")
+                result = subprocess.run(
+                    ["adb", "devices"], capture_output=True, text=True
+                )
+                lines = result.stdout.strip().splitlines()
+                if len(lines) < 2 or not any(line.strip() for line in lines[1:]):
+                    print(
+                        "No Android device detected by adb. Please connect a device and try again."
                     )
-                    lines = result.stdout.strip().splitlines()
-                    if len(lines) < 2 or not any(line.strip() for line in lines[1:]):
-                        print(
-                            "No Android device detected by adb. Please connect a device and try again."
-                        )
-                        time.sleep(2)
-                    else:
-                        print("Found connected Android device")
-                        break
-                # find the install batch file
-                for b in platform_folder.glob("*.bat"):
-                    if b.name.lower().startswith("install"):
-                        subprocess.check_call(
-                            [str(b)], shell=True, cwd=str(platform_folder)
-                        )
-                        break
-
-            if args.grablog:
-                subprocess.check_call(
-                    ["adb", "logcat", "-c"], shell=True, cwd=str(project_folder)
-                )
-
-            if args.run or args.grablog:
-                subprocess.check_call(
-                    [
-                        "adb",
-                        "shell",
-                        "am",
-                        "start",
-                        "-n",
-                        "com.YourCompany.DirectCameraExamples/com.epicgames.unreal.GameActivity",
-                    ]
-                )
-
-            if args.grablog:
-                if args.logname:
-                    log_name = args.logname
+                    time.sleep(2)
                 else:
-                    now = datetime.now()
-                    log_name = now.strftime(
-                        f"{project_short_name}-%Y_%m_%d-%H_%M_%S.txt"
+                    print("Found connected Android device")
+                    break
+            # find the install batch file
+            found_install = False
+            for b in platform_folder.glob("*.bat"):
+                if b.name.lower().startswith("install"):
+                    subprocess.check_call(
+                        [str(b)], shell=True, cwd=str(platform_folder)
                     )
-                print(f"Grabbing log to {log_name}. Press ctrl+c to exit")
-                subprocess.check_call(
-                    ["adb", "logcat", ">", str(log_name)],
-                    shell=True,
-                    cwd=str(project_folder),
+                    found_install = True
+                    break
+            if not found_install:
+                print(
+                    f"No install batch file found in {platform_folder}. Please check the build."
                 )
+                sys.exit(-1)
+        if args.grablog:
+            subprocess.check_call(
+                ["adb", "logcat", "-c"], shell=True, cwd=str(project_folder)
+            )
+
+        if args.run or args.grablog:
+            subprocess.check_call(
+                [
+                    "adb",
+                    "shell",
+                    "am",
+                    "start",
+                    "-n",
+                    "com.YourCompany.DirectCameraExamples/com.epicgames.unreal.GameActivity",
+                ]
+            )
+
+        if args.grablog:
+            if args.logname:
+                log_name = args.logname
+            else:
+                now = datetime.now()
+                log_name = now.strftime(f"{project_short_name}-%Y_%m_%d-%H_%M_%S.txt")
+            print(f"Grabbing log to {log_name}. Press ctrl+c to exit")
+            subprocess.check_call(
+                ["adb", "logcat", ">", str(log_name)],
+                shell=True,
+                cwd=str(project_folder),
+            )
 
     finally:
         project_file.write_text(orig_project_file)
