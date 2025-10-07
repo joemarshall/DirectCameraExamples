@@ -333,6 +333,34 @@ if (args.command != "release") and getattr(args, "development", False):
 else:
     release_folder = Path(__file__).parent / "Releases"
 
+def make_temporary_signing_key():
+    """
+    Creates a temporary signing key for the project.
+    """
+    keytool_path = Path(os.environ.get("JAVA_HOME", "")) / "bin" / "keytool"
+    keystore_folder = Path(__file__).parent / "Build" / "Android"
+    keystore_file = keystore_folder / "DirectCameraExample.keystore"
+    if keystore_file.exists():
+        print(f"Keystore already exists at {keystore_file}, skipping creation.")
+        return
+    print(f"Creating temporary signing key at {keystore_file}")
+    keystore_folder.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        keytool_path,
+        "-genkey",
+        "-v",
+        "-keystore", str(keystore_file),
+        "-alias", "directcameraexample",
+        "-keyalg", "RSA",
+        "-keysize", "2048",
+        "-validity", "10000",
+        "-dname", "CN=DirectCameraExample, OU=Development, O=YourCompany, L=YourCity, S=YourState, C=YourCountry",
+        "-storepass", "example",
+        "-keypass", "example",
+        "-noprompt"
+    ]
+    subprocess.check_call(cmd)
+
 
 def command_launch(args):
     ue_base_path = args.ue_path
@@ -367,6 +395,8 @@ def command_build(args):
     if args.development:
         use_validation_layer = args.novalidation
     else:
+        # release build - make the signing key if it doesn't exist
+        make_temporary_signing_key()
         use_validation_layer = args.validation
 
     enabled_build_plugins = []
@@ -519,6 +549,8 @@ def command_build(args):
                     "-nocompile",
                     "-nocompileuat",
                 ]
+                if not args.development:
+                    cmdline_build.append("-distribution")
                 if args.clean:
                     cmdline_build.append("-clean")
                 else:

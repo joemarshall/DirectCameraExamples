@@ -84,3 +84,6 @@ DevReleases
 Plugins
 # ignore my temp log files
 temp*.txt
+
+# ignore generated signing keystore
+**/DirectCameraExample.keystore
