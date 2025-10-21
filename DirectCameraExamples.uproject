@@ -1,77 +1,54 @@
 {
-  "FileVersion": 3,
-  "EngineAssociation": "5.3",
-  "Category": "",
-  "Description": "",
-  "Modules": [],
-  "Plugins": [
-    {
-      "Name": "ModelingToolsEditorMode",
-      "Enabled": true
-    },
-    {
-      "Name": "XRBase",
-      "Enabled": true
-    },
-    {
-      "Name": "OculusXR",
-      "Enabled": false,
-      "SupportedTargetPlatforms": [
-        "Win64",
-        "Android"
-      ]
-    },
-    {
-      "Name": "ViveOpenXR",
-      "Enabled": false,
-      "SupportedTargetPlatforms": [
-        "Win64",
-        "Android"
-      ]
-    },
-    {
-      "Name": "PICOXR",
-      "Enabled": false,
-      "SupportedTargetPlatforms": [
-        "Win64",
-        "Android"
-      ]
-    },
-    {
-      "Name": "PICOOpenXR",
-      "Enabled": false,
-      "SupportedTargetPlatforms": [
-        "Win64",
-        "Linux",
-        "Android"
-      ]
-    },
-    {
-      "Name": "RenderDocPlugin",
-      "Enabled": true
-    },
-    {
-      "Name": "StaticMeshEditorModeling",
-      "Enabled": true
-    },
-    {
-      "Name": "DirectCameraAndroid",
-      "Enabled": true,
-      "SupportedTargetPlatforms": [
-        "Win64",
-        "Android"
-      ]
-    },
-    {
-      "Name": "VisualStudioTools",
-      "Enabled": true,
-      "SupportedTargetPlatforms": [
-        "Win64"
-      ]
-    }
-  ],
-  "TargetPlatforms": [],
-  "AdditionalRootDirectories": [],
-  "AdditionalPluginDirectories": [],
-  "EpicSampleNameHash": ""
+	"FileVersion": 3,
+	"EngineAssociation": "5.3",
+	"Category": "",
+	"Description": "",
+	"Plugins": [
+		{
+			"Name": "XRBase",
+			"Enabled": true
+		},
+		{
+			"Name": "OculusXR",
+			"Enabled": false,
+			"SupportedTargetPlatforms": [
+				"Win64",
+				"Android"
+			]
+		},
+		{
+			"Name": "ViveOpenXR",
+			"Enabled": false,
+			"SupportedTargetPlatforms": [
+				"Win64",
+				"Android"
+			]
+		},
+		{
+			"Name": "PICOXR",
+			"Enabled": false,
+			"SupportedTargetPlatforms": [
+				"Win64",
+				"Android"
+			]
+		},
+		{
+			"Name": "PICOOpenXR",
+			"Enabled": false,
+			"SupportedTargetPlatforms": [
+				"Win64",
+				"Linux",
+				"Android"
+			]
+		},
+		{
+			"Name": "DirectCameraAndroid",
+			"Enabled": true,
+			"SupportedTargetPlatforms": [
+				"Win64",
+				"Android"
+			],
+			"MarketplaceURL": "com.epicgames.launcher://ue/Fab/product/b1ad42b6-f1f5-479c-a2b2-af24cd4bc18b"
+		}
+	]
 }
