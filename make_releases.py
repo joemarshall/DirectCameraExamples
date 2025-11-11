@@ -66,6 +66,7 @@ class UnrealIni:
         # print(self.reconstruct())
 
 
+
 @dataclass
 class BuildFlavour:
     flavour_name: str
@@ -74,17 +75,12 @@ class BuildFlavour:
     game_keys: tuple[str, dict] | None = None
     engine_version_override: str | None = None
     dont_build: bool = False
+    extra_uproject_modification: Callable[[object,dict, bool,str], None] | None = None
 
     def update_uproject(self, project_dict: dict, enabled: bool):
         if not self.plugin_name:
             return True
-        found_plugin = False
-        for plugin_info in project_dict["Plugins"]:
-            name = plugin_info["Name"]
-            if name == self.plugin_name:
-                found_plugin = True
-                plugin_info["Enabled"] = enabled
-        return found_plugin
+        return self.enable_plugin(project_dict, self.plugin_name, enabled)
 
     def update_defaultengine(self, config_ini: UnrealIni, enabled: bool):
         if self.engine_keys != None:
@@ -99,6 +95,24 @@ class BuildFlavour:
                 # print(val, modifier)
                 config_ini.update_value(enabled, val, modifier)
         return config_ini.reconstruct()
+    
+    def enable_plugin(self, project_dict: dict, name: str, enabled: bool):
+        found_plugin = False
+        for plugin_info in project_dict["Plugins"]:
+            this_name = plugin_info["Name"]
+            if name == this_name:
+                found_plugin = True
+                plugin_info["Enabled"] = enabled
+        return found_plugin
+
+def quest_buildproject_add_openxr(build_flavour:BuildFlavour,project_dict: dict, enabled: bool, engine_version: str):
+    # on 5.3 we need to enable openxr plugin also
+    # or else newer version of quest OS crash
+    int_version = tuple(map(int, engine_version.split(".")))
+    if int_version>=(5,5):
+        return True
+    return build_flavour.enable_plugin(project_dict, "OpenXR", enabled)
+
 
 
 BUILD_FLAVOURS = [
@@ -106,6 +120,13 @@ BUILD_FLAVOURS = [
         "quest",
         "OculusXR",
         [
+            (
+                (
+                "/Script/OculusXRHMD.OculusXRHMDRuntimeSettings",
+                "XrApi",
+                ),
+            lambda enabled, current: "NativeOpenXR" if enabled else current,
+            ),
             (
                 (
                     "/Script/AndroidRuntimeSettings.AndroidRuntimeSettings",
@@ -146,6 +167,7 @@ BUILD_FLAVOURS = [
                 lambda enabled, current: (str(enabled)),
             ),
         ],
+        extra_uproject_modification=quest_buildproject_add_openxr
     ),
     BuildFlavour(
         "android",
@@ -427,6 +449,15 @@ def command_build(args):
         release_folder.mkdir(exist_ok=True)
 
         for current_flavour in enabled_build_plugins:
+
+            # set derived data cache path to be different for each build flavour
+            # because e.g. quest, pico, and android versions of cached assets are incompatible
+            # and don't always get rebuilt if the plugins change
+            engine_version = (
+                current_flavour.engine_version_override or args.engine_version
+            )
+
+
             for all_flavour in BUILD_FLAVOURS:
                 enabled = all_flavour.flavour_name == current_flavour.flavour_name
                 plugin_found = all_flavour.update_uproject(uproject_data, enabled)
@@ -435,17 +466,15 @@ def command_build(args):
                         f"Plugin {all_flavour.plugin_name} not found in uproject file"
                     )
                     sys.exit(-1)
+
+                if all_flavour.extra_uproject_modification is not None:
+                    modified_ok = all_flavour.extra_uproject_modification(all_flavour,uproject_data,enabled, engine_version)
+                    if not modified_ok:
+                        print(f"Extra uproject modification failed for {all_flavour.flavour_name}")
+
                 all_flavour.update_defaultengine(defaultengine_data, enabled)
                 all_flavour.update_defaultgame(defaultgame_data, enabled)
 
-
-
-            # set derived data cache path to be different for each build flavour
-            # because e.g. quest, pico, and android versions of cached assets are incompatible
-            # and don't always get rebuilt if the plugins change
-            engine_version = (
-                current_flavour.engine_version_override or args.engine_version
-            )
 
             engine_path = Path(args.ue_path) / f"UE_{engine_version}"
 

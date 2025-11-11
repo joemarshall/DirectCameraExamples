@@ -10,11 +10,12 @@
 		},
 		{
 			"Name": "OculusXR",
-			"Enabled": false,
+			"Enabled": true,
 			"SupportedTargetPlatforms": [
 				"Win64",
 				"Android"
-			]
+			],
+			"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/product/8313d8d7e7cf4e03a33e79eb757bccba"
 		},
 		{
 			"Name": "ViveOpenXR",
@@ -49,6 +50,15 @@
 				"Android"
 			],
 			"MarketplaceURL": "com.epicgames.launcher://ue/Fab/product/b1ad42b6-f1f5-479c-a2b2-af24cd4bc18b"
+		},
+		{
+			"Name": "OpenXR",
+			"Enabled": true,
+			"SupportedTargetPlatforms": [
+				"Win64",
+				"Linux",
+				"Android"
+			]
 		}
 	]
 }
